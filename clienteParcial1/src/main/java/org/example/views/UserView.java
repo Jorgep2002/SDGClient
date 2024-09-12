@@ -10,6 +10,8 @@ import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -26,7 +28,7 @@ public class UserView extends JFrame {
     private List<DirectorioEntity> directorios; // Lista de entidades de directorios
     private String selectedFolderPath; // Variable global para almacenar la carpeta seleccionada
     private JPanel fileDetailPanel; // Panel para mostrar detalles del archivo
-
+    private String actualPath;
     public UserView(FileClient fileClient, UserEntity actualUser) {
         this.fileClient = fileClient;
         this.actualUser = actualUser;
@@ -75,12 +77,14 @@ public class UserView extends JFrame {
             public void valueChanged(TreeSelectionEvent e) {
                 DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) directoryTree.getLastSelectedPathComponent();
                 if (selectedNode != null) {
-                    // Obtener el nombre del archivo o directorio seleccionado
-                    String nodeName = selectedNode.toString();
+                    // Obtener la ruta completa del archivo o directorio seleccionado
+                    String fullPath = getFullPath(selectedNode);
+                    actualPath = fullPath;
+                    System.out.println(actualPath);
 
                     if (selectedNode.isLeaf()) {
                         // Si es un archivo, mostrar los detalles del archivo
-                        showFileDetails(nodeName);
+                        showFileDetails(selectedNode.toString());
                     } else {
                         // Si es un directorio, limpiar los detalles del archivo
                         fileDetailPanel.removeAll();
@@ -97,10 +101,35 @@ public class UserView extends JFrame {
 
         // Añadir el panel principal a la ventana
         this.add(mainPanel);
+        // Añadir listener para subir archivos
+        uploadMenuItem.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                JFileChooser fileChooser = new JFileChooser();
+                int returnValue = fileChooser.showOpenDialog(null);
 
+                if (returnValue == JFileChooser.APPROVE_OPTION) {
+                    File file = fileChooser.getSelectedFile();
+                    try {
+                        byte[] fileData = convertFileToBytes(file);
+                        fileClient.uploadFile(file.getName(), fileData);
+                        JOptionPane.showMessageDialog(UserView.this, "File uploaded successfully!");
+                        initializeDirectorios();
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(UserView.this, "Failed to upload file: " + ex.getMessage());
+                    }
+                }
+            }
+        });
         // Hacer visible la ventana
         this.setVisible(true);
     }
+
+
+
+
+
+
 
     // Método para convertir un archivo a un array de bytes
     private byte[] convertFileToBytes(File file) throws IOException {
@@ -148,6 +177,11 @@ public class UserView extends JFrame {
     // Inicializar los directorios con las entidades
     private void initializeDirectorios() {
         try {
+            // Limpiar la lista de directorios si ya existe
+            if (this.directorios != null) {
+                this.directorios.clear();
+            }
+
             // Obtener las listas de DirectorioEntity
             List<DirectorioEntity> filesByUser = fileClient.getFilesByUser(actualUser.getId());
             List<DirectorioEntity> userFiles = fileClient.getUserFiles(actualUser.getId());
@@ -159,6 +193,10 @@ public class UserView extends JFrame {
             // Asignar la lista combinada a la variable
             this.directorios = new ArrayList<>(combinedFiles);
             System.out.println(directorios);
+
+            // Limpiar y actualizar el árbol de directorios
+            updateDirectoryTree();
+
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -166,11 +204,20 @@ public class UserView extends JFrame {
 
     // Método para obtener la ruta completa de un nodo seleccionado en el árbol
     private String getFullPath(DefaultMutableTreeNode node) {
-        DirectorioEntity entity = (DirectorioEntity) node.getUserObject();
-        return entity.getDirRuta(); // Obtener la ruta desde la entidad
+        Object[] path = node.getPath(); // Obtener todos los nodos desde la raíz hasta el nodo seleccionado
+        StringBuilder fullPath = new StringBuilder();
+
+        // Construir la ruta completa
+        for (int i = 1; i < path.length; i++) { // Ignoramos el primer nodo, ya que es la raíz ("Empresa")
+            fullPath.append(path[i].toString());
+            if (i < path.length - 1) {
+                fullPath.append("/"); // Añadir separador "/" entre los directorios
+            }
+        }
+
+        return fullPath.toString(); // Devolver la ruta completa
     }
 
-    // Método para mostrar detalles del archivo (icono y nombre) en el panel
     // Método para mostrar detalles del archivo (icono y nombre) en el panel
     private void showFileDetails(String fileName) {
         fileDetailPanel.removeAll();
@@ -187,6 +234,23 @@ public class UserView extends JFrame {
         // Actualizar la vista del panel
         fileDetailPanel.revalidate();
         fileDetailPanel.repaint();
+    }
+
+
+
+    // Método para limpiar y actualizar el árbol de directorios
+    private void updateDirectoryTree() {
+        // Crear el nuevo modelo de árbol con los directorios actualizados
+        DefaultMutableTreeNode root = createDirectoryTree(directorios);
+
+        // Obtener el modelo actual del árbol
+        DefaultTreeModel treeModel = (DefaultTreeModel) directoryTree.getModel();
+
+        // Actualizar el modelo con el nuevo árbol
+        treeModel.setRoot(root);
+
+        // Recargar el modelo para que los cambios se reflejen en el JTree
+        treeModel.reload();
     }
 
 }
